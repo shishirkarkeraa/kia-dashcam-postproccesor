@@ -1,0 +1,14 @@
+/target/
+/node_modules/
+/apps/dashcam-gui/node_modules/
+/apps/dashcam-gui/dist/
+/.local-cargo/
+/.local-rustup/
+/.DS_Store
+*.log
+
+# Downloaded, platform-specific media binaries are staged by scripts.
+/apps/dashcam-gui/src-tauri/binaries/*
+!/apps/dashcam-gui/src-tauri/binaries/README.md
+/dist/
+/apps/dashcam-gui/src-tauri/tauri.release.conf.json
