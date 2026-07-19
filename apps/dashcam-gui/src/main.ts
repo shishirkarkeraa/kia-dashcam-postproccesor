@@ -1,4 +1,5 @@
 import "./styles.css";
+import brandLogo from "./assets/White_PP.png";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -69,18 +70,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 48 48" role="img">
-            <path d="M9 13.5A4.5 4.5 0 0 1 13.5 9h21a4.5 4.5 0 0 1 4.5 4.5v21a4.5 4.5 0 0 1-4.5 4.5h-21A4.5 4.5 0 0 1 9 34.5z" />
-            <circle cx="24" cy="24" r="9" />
-            <circle cx="24" cy="24" r="3.5" />
-            <path d="M14 15h7l2-3h8l2 3h2" />
-          </svg>
-        </div>
-        <div>
-          <p class="eyebrow">KIA DASHCAM</p>
-          <h1>Post-Processing Studio</h1>
-        </div>
+        <img class="brand-logo" src="${brandLogo}" alt="Dashcam Postprocessing Engine" />
       </div>
       <button id="check-update" class="ghost-button" type="button">Check for updates</button>
     </header>
