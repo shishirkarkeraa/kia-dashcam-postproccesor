@@ -1,0 +1,201 @@
+name: Signed cross-platform release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            archive_kind: tar
+            archive_extension: tar.gz
+            executable_suffix: ""
+            tauri_args: --target aarch64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
+          - name: macOS Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            archive_kind: tar
+            archive_extension: tar.gz
+            executable_suffix: ""
+            tauri_args: --target x86_64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
+          - name: Windows x64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            archive_kind: zip
+            archive_extension: zip
+            executable_suffix: .exe
+            tauri_args: --target x86_64-pc-windows-msvc --bundles nsis --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.windows-signing.conf.json
+          - name: Linux x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage
+            archive_kind: tar
+            archive_extension: tar.gz
+            executable_suffix: ""
+            tauri_args: --target x86_64-unknown-linux-gnu --bundles appimage --config src-tauri/tauri.release.conf.json
+    runs-on: ${{ matrix.os }}
+    env:
+      KIA_DASHCAM_UPDATE_REPO: ${{ github.repository }}
+      KIA_CLI_UPDATE_PUBLIC_KEY_HEX: ${{ vars.KIA_CLI_UPDATE_PUBLIC_KEY_HEX }}
+      CLI_UPDATE_PRIVATE_KEY_BASE64: ${{ secrets.CLI_UPDATE_PRIVATE_KEY_BASE64 }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/dashcam-gui/package-lock.json
+
+      - name: Set application version from tag
+        shell: bash
+        run: node scripts/set-version.mjs "${GITHUB_REF_NAME}"
+
+      - name: Prepare repository-derived signed updater configuration
+        run: node scripts/prepare-tauri-release-config.mjs
+
+      - name: Install Linux desktop and HandBrake build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake build-essential cmake git libappindicator3-dev libass-dev libbz2-dev libdrm-dev libfontconfig1-dev libfreetype6-dev libfribidi-dev libharfbuzz-dev libjansson-dev liblzma-dev libnuma-dev libogg-dev libopus-dev libsamplerate0-dev libssl-dev libtheora-dev libtool libtool-bin libturbojpeg0-dev libvorbis-dev libvpx-dev libwebkit2gtk-4.1-dev libx264-dev libxml2-dev libz-dev meson nasm ninja-build patch patchelf pkg-config python3 librsvg2-dev tar unzip xz-utils yasm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix apps/dashcam-gui
+
+      - name: Build pinned HandBrakeCLI on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash scripts/build-linux-handbrake.sh "$RUNNER_TEMP/handbrake/HandBrakeCLI"
+          echo "KIA_HANDBRAKE_PATH=$RUNNER_TEMP/handbrake/HandBrakeCLI" >> "$GITHUB_ENV"
+
+      - name: Stage checksum-verified media tools
+        run: npm run prepare:media --prefix apps/dashcam-gui
+
+      - name: Import Apple Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/certificate.p12', Buffer.from(process.env.APPLE_CERTIFICATE, 'base64'))"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          identity="$(security find-identity -v -p codesigning build.keychain | awk -F\" 'NR == 1 { print $2 }')"
+          test -n "$identity"
+          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Decode Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "kia-dashcam-codesign.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          "KIA_WINDOWS_PFX_PATH=$certificate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build standalone CLI
+        run: cargo build --locked --release --target ${{ matrix.target }} -p kia-dashcam-cli
+
+      - name: Code-sign macOS CLI
+        if: runner.os == 'macOS'
+        shell: bash
+        run: codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "target/${{ matrix.target }}/release/kia-dashcam-cli"
+
+      - name: Code-sign Windows CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/sign-windows.ps1 "target/${{ matrix.target }}/release/kia-dashcam-cli.exe"
+
+      - name: Package self-contained CLI archive
+        run: >-
+          node scripts/package-cli.mjs
+          --target ${{ matrix.target }}
+          --binary target/${{ matrix.target }}/release/kia-dashcam-cli${{ matrix.executable_suffix }}
+          --media apps/dashcam-gui/src-tauri/binaries/media-tools
+          --output release-assets/kia-dashcam-cli-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_extension }}
+          --kind ${{ matrix.archive_kind }}
+
+      - name: Install CLI archive signer
+        run: cargo install zipsign --version 0.2.1 --locked
+
+      - name: Sign and verify CLI update archive
+        shell: bash
+        run: |
+          node scripts/decode-release-keys.mjs "$RUNNER_TEMP/kia-update-keys"
+          archive="release-assets/kia-dashcam-cli-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.archive_extension }}"
+          zipsign sign ${{ matrix.archive_kind }} "$archive" "$RUNNER_TEMP/kia-update-keys/private.key"
+          zipsign verify ${{ matrix.archive_kind }} "$archive" "$RUNNER_TEMP/kia-update-keys/public.key"
+          node scripts/assert-tampered-update-rejected.mjs "$archive" ${{ matrix.archive_kind }} "$RUNNER_TEMP/kia-update-keys/public.key"
+
+      - name: Smoke-test packaged CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli-smoke"
+          tar -xf "release-assets/kia-dashcam-cli-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.archive_extension }}" -C "$RUNNER_TEMP/cli-smoke"
+          "$RUNNER_TEMP/cli-smoke/kia-dashcam-cli${{ matrix.executable_suffix }}" --version
+
+      - name: Build signed GUI installer and updater artifact
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/dashcam-gui
+          tagName: ${{ github.ref_name }}
+          releaseName: Kia Dashcam Processor ${{ github.ref_name }}
+          releaseBody: Self-contained signed desktop installers and CLI archives for Windows, macOS, and Linux.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.tauri_args }}
+
+      - name: Upload standalone CLI archive
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: release-assets/kia-dashcam-cli-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_extension }}
+
+  publish:
+    name: Publish completed release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish draft after every signed platform succeeds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"

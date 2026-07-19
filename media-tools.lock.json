@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 2,
+  "ffmpeg": {
+    "targets": {
+      "darwin-arm64": {
+        "version": "8.1.2",
+        "provider": "Martin Riedl static FFmpeg builds",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "archives": {
+          "ffmpeg": {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffmpeg.zip",
+            "sha256": "ef1aa60006c7b77ce170c1608c08d8e4ba1c30c5746f2ac986ded932d0ac2c3c"
+          },
+          "ffprobe": {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1783011502_8.1.2/ffprobe.zip",
+            "sha256": "c39787f4af7a3932502d2d48db6f6feaaa836b48a73ef78c32cc3285df61dfaf"
+          }
+        }
+      },
+      "darwin-x64": {
+        "version": "8.1.2",
+        "provider": "Martin Riedl static FFmpeg builds",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "archives": {
+          "ffmpeg": {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1783018342_8.1.2/ffmpeg.zip",
+            "sha256": "a52ef43883f44c219766d4b3bdde4e635b35465d0b704c01c3a0566b59775df9"
+          },
+          "ffprobe": {
+            "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1783018342_8.1.2/ffprobe.zip",
+            "sha256": "5408ca588c8c72b0dde3afe676d0a7acf25ef97e55ae6eba5c7bede1cda42695"
+          }
+        }
+      },
+      "linux-x64": {
+        "version": "8.1.2",
+        "provider": "Martin Riedl static FFmpeg builds",
+        "source": "https://ffmpeg.martin-riedl.de/",
+        "archives": {
+          "ffmpeg": {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1783011670_8.1.2/ffmpeg.zip",
+            "sha256": "56452c0bfc4ee0325cd615d62f46ba8264f62eed34f727c2224c6c84fa7b8719"
+          },
+          "ffprobe": {
+            "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1783011670_8.1.2/ffprobe.zip",
+            "sha256": "c6f2d36e98f9a4445fad0b0be539f4c4faf13fd502116bf131becd53f56cd390"
+          }
+        }
+      },
+      "win32-x64": {
+        "version": "N-125658-g0869e710e6",
+        "provider": "BtbN FFmpeg Builds GPL static",
+        "source": "https://github.com/BtbN/FFmpeg-Builds/tree/autobuild-2026-07-18-13-13",
+        "archive": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-18-13-13/ffmpeg-N-125658-g0869e710e6-win64-gpl.zip",
+          "sha256": "2e77f59905db0f12ad3a402a0888fc7e3ff5f1dc52e4a2a59ff28ec72e76320e"
+        }
+      }
+    }
+  },
+  "handbrake": {
+    "version": "1.11.2",
+    "darwin": {
+      "url": "https://github.com/HandBrake/HandBrake/releases/download/1.11.2/HandBrakeCLI-1.11.2.dmg",
+      "sha256": "14463aa81038aaa3ce421dc6cee65fd6c82fdabda040931541ccca38939299fa"
+    },
+    "win32-x64": {
+      "url": "https://github.com/HandBrake/HandBrake/releases/download/1.11.2/HandBrakeCLI-1.11.2-win-x86_64.zip",
+      "sha256": "80bfe8d5f5d11cc3ef76b834add3ed4e82dee6523ffeb435c283f88b1a21f09d"
+    },
+    "linux-x64": {
+      "repository": "https://github.com/HandBrake/HandBrake.git",
+      "tag": "1.11.2",
+      "commit": "9eb6c936803e8b071035b1a77662cb0db58441ea"
+    }
+  }
+}
