@@ -238,14 +238,22 @@ async function acquireHandBrake(temporaryRoot) {
 async function extractZip(archive, output) {
   await mkdir(output, { recursive: true });
   if (targetPlatform === "win32") {
-    run("powershell", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
-      archive,
-      output,
-    ]);
+    run(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Expand-Archive -LiteralPath $env:KIA_MEDIA_ARCHIVE -DestinationPath $env:KIA_MEDIA_OUTPUT -Force",
+      ],
+      {
+        env: {
+          ...process.env,
+          KIA_MEDIA_ARCHIVE: archive,
+          KIA_MEDIA_OUTPUT: output,
+        },
+      },
+    );
   } else {
     run("unzip", ["-q", "-o", archive, "-d", output]);
   }
@@ -409,8 +417,8 @@ async function findNamedFile(root, name) {
   return undefined;
 }
 
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: "inherit" });
+function run(command, args, options = {}) {
+  const result = spawnSync(command, args, { stdio: "inherit", ...options });
   if (result.error || result.status !== 0) {
     throw new Error(
       `${command} failed: ${result.error?.message || `exit code ${result.status}`}`,
