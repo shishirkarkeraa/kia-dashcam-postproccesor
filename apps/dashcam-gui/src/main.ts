@@ -557,4 +557,4 @@ function escapeHtml(value: string): string {
 
 render();
 void initializeNativeEvents();
-setTimeout(() => void checkForUpdate(false), 1500);
+setTimeout(() => void checkForUpdate(false), 5000);
