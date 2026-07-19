@@ -1,0 +1,21 @@
+[package]
+name = "kia-dashcam-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+clap = { version = "4.5.54", features = ["derive"] }
+ctrlc = "3.5.1"
+hex = "0.4.3"
+kia-dashcam-core = { path = "../../crates/dashcam-core" }
+semver = "1.0.27"
+self_update = { version = "0.44.0", default-features = false, features = [
+  "archive-tar",
+  "archive-zip",
+  "compression-flate2",
+  "compression-zip-deflate",
+  "rustls",
+  "signatures",
+  "ureq",
+] }
