@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Desktop permissions for the Kia Dashcam Processor window","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","process:allow-restart","updater:default"]}}
