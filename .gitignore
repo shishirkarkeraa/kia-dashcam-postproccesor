@@ -10,5 +10,8 @@
 # Downloaded, platform-specific media binaries are staged by scripts.
 /apps/dashcam-gui/src-tauri/binaries/*
 !/apps/dashcam-gui/src-tauri/binaries/README.md
+!/apps/dashcam-gui/src-tauri/binaries/media-tools/
+/apps/dashcam-gui/src-tauri/binaries/media-tools/*
+!/apps/dashcam-gui/src-tauri/binaries/media-tools/.gitkeep
 /dist/
 /apps/dashcam-gui/src-tauri/tauri.release.conf.json
