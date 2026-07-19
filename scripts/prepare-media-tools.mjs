@@ -7,6 +7,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -24,6 +25,7 @@ const targetPlatform = process.env.KIA_TARGET_PLATFORM || process.platform;
 const targetArch = process.env.KIA_TARGET_ARCH || process.arch;
 const targetKey = `${targetPlatform}-${targetArch}`;
 const targetConfig = lock.ffmpeg.targets[targetKey];
+const finalizeOnly = process.argv.includes("--finalize-only");
 const destinationArgument = process.argv.indexOf("--destination");
 const destination =
   destinationArgument >= 0
@@ -41,35 +43,49 @@ if (targetPlatform !== process.platform || targetArch !== process.arch) {
 }
 
 await mkdir(destination, { recursive: true });
-for (const name of [
-  `ffmpeg${executableSuffix}`,
-  `ffprobe${executableSuffix}`,
-  `HandBrakeCLI${executableSuffix}`,
-  "media-tools.json",
-  "THIRD_PARTY_NOTICES.md",
-]) {
-  await rm(join(destination, name), { force: true });
+if (!finalizeOnly) {
+  for (const name of [
+    `ffmpeg${executableSuffix}`,
+    `ffprobe${executableSuffix}`,
+    `HandBrakeCLI${executableSuffix}`,
+    "media-tools.json",
+    "THIRD_PARTY_NOTICES.md",
+  ]) {
+    await rm(join(destination, name), { force: true });
+  }
 }
 
 const temporary = await mkdtemp(join(tmpdir(), "kia-media-tools-"));
 try {
   const ffmpegDestination = join(destination, `ffmpeg${executableSuffix}`);
   const ffprobeDestination = join(destination, `ffprobe${executableSuffix}`);
-  await acquireFfmpegTools(
-    targetConfig,
-    temporary,
-    ffmpegDestination,
-    ffprobeDestination,
-  );
-
-  const handbrakeSource = process.env.KIA_HANDBRAKE_PATH
-    ? resolve(process.env.KIA_HANDBRAKE_PATH)
-    : await acquireHandBrake(temporary);
   const handbrakeDestination = join(
     destination,
     `HandBrakeCLI${executableSuffix}`,
   );
-  await copyExecutable(handbrakeSource, handbrakeDestination);
+  if (!finalizeOnly) {
+    await acquireFfmpegTools(
+      targetConfig,
+      temporary,
+      ffmpegDestination,
+      ffprobeDestination,
+    );
+
+    const handbrakeSource = process.env.KIA_HANDBRAKE_PATH
+      ? resolve(process.env.KIA_HANDBRAKE_PATH)
+      : await acquireHandBrake(temporary);
+    await copyExecutable(handbrakeSource, handbrakeDestination);
+  }
+
+  if (targetPlatform === "darwin") {
+    for (const binary of [
+      ffmpegDestination,
+      ffprobeDestination,
+      handbrakeDestination,
+    ]) {
+      await thinMacosExecutable(binary);
+    }
+  }
 
   auditArchitecture(ffmpegDestination, "FFmpeg");
   auditArchitecture(ffprobeDestination, "FFprobe");
@@ -77,11 +93,17 @@ try {
   const ffmpegLicense = auditFfmpeg(ffmpegDestination, "FFmpeg");
   const ffprobeLicense = auditFfmpeg(ffprobeDestination, "FFprobe");
   const handbrakeVersion = auditHandBrake(handbrakeDestination);
+  const codeSigning = signMacosExecutables([
+    ffmpegDestination,
+    ffprobeDestination,
+    handbrakeDestination,
+  ]);
 
   const staged = {
     target: targetKey,
     generatedAt: new Date().toISOString(),
     runtimePolicy: "bundled-only-no-path-search-no-runtime-download",
+    ...(codeSigning ? { codeSigning } : {}),
     tools: {
       ffmpeg: {
         version: targetConfig.version,
@@ -111,7 +133,7 @@ try {
     join(destination, "THIRD_PARTY_NOTICES.md"),
   );
   console.log(
-    `Staged checksum-verified, redistribution-audited media tools for ${targetKey} in ${destination}`,
+    `${finalizeOnly ? "Finalized" : "Staged"} checksum-verified, redistribution-audited media tools for ${targetKey} in ${destination}`,
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });
@@ -248,6 +270,59 @@ async function copyExecutable(source, output) {
   if (targetPlatform !== "win32") await chmod(output, 0o755);
 }
 
+async function thinMacosExecutable(binary) {
+  const expected = expectedMacosArchitecture();
+  const architectures = macosArchitectures(binary);
+  if (!architectures.includes(expected)) {
+    throw new Error(
+      `${basename(binary)} architecture mismatch: expected ${expected}, found ${architectures.join(", ")}`,
+    );
+  }
+  if (architectures.length === 1) return;
+
+  const thinned = `${binary}.thin-${process.pid}`;
+  await rm(thinned, { force: true });
+  try {
+    run("lipo", [binary, "-thin", expected, "-output", thinned]);
+    await chmod(thinned, 0o755);
+    await rename(thinned, binary);
+  } finally {
+    await rm(thinned, { force: true });
+  }
+}
+
+function signMacosExecutables(binaries) {
+  if (targetPlatform !== "darwin") return undefined;
+
+  const identity = process.env.APPLE_SIGNING_IDENTITY?.trim() || "-";
+  const mode = identity === "-"
+    ? "ad-hoc"
+    : identity.startsWith("Developer ID Application:")
+      ? "developer-id"
+      : "apple-identity";
+  if (
+    process.env.KIA_REQUIRE_DEVELOPER_ID === "true" &&
+    mode !== "developer-id"
+  ) {
+    throw new Error(
+      `Release staging requires a Developer ID Application identity, received: ${identity}`,
+    );
+  }
+  for (const binary of binaries) {
+    const args = ["--force", "--options", "runtime"];
+    if (identity !== "-") args.push("--timestamp");
+    args.push("--sign", identity, binary);
+    run("codesign", args);
+    run("codesign", ["--verify", "--strict", "--verbose=2", binary]);
+  }
+
+  return {
+    mode,
+    hardenedRuntime: true,
+    verified: true,
+  };
+}
+
 function auditFfmpeg(binary, label) {
   const result = spawnSync(binary, ["-L"], {
     encoding: "utf8",
@@ -274,19 +349,29 @@ function auditFfmpeg(binary, label) {
 
 function auditArchitecture(binary, label) {
   if (targetPlatform !== "darwin") return;
+  const expected = expectedMacosArchitecture();
+  const architectures = macosArchitectures(binary);
+  if (architectures.length !== 1 || architectures[0] !== expected) {
+    throw new Error(
+      `${label} must contain only ${expected}, found ${architectures.join(", ")}`,
+    );
+  }
+}
+
+function expectedMacosArchitecture() {
+  if (targetArch === "arm64") return "arm64";
+  if (targetArch === "x64") return "x86_64";
+  throw new Error(`Unsupported macOS architecture: ${targetArch}`);
+}
+
+function macosArchitectures(binary) {
   const result = spawnSync("lipo", ["-archs", binary], { encoding: "utf8" });
   if (result.error || result.status !== 0) {
     throw new Error(
-      `${label} architecture audit could not run: ${result.error?.message || `exit ${result.status}`}`,
+      `${basename(binary)} architecture audit could not run: ${result.error?.message || `exit ${result.status}`}`,
     );
   }
-  const expected = targetArch === "arm64" ? "arm64" : "x86_64";
-  const architectures = result.stdout.trim().split(/\s+/);
-  if (!architectures.includes(expected)) {
-    throw new Error(
-      `${label} architecture mismatch: expected ${expected}, found ${architectures.join(", ")}`,
-    );
-  }
+  return result.stdout.trim().split(/\s+/).filter(Boolean);
 }
 
 function auditHandBrake(binary) {

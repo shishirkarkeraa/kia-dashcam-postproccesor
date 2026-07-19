@@ -14,7 +14,17 @@ const output = resolve(
   "apps/dashcam-gui/src-tauri/tauri.release.conf.json",
 );
 const config = {
-  bundle: { createUpdaterArtifacts: true },
+  bundle: {
+    createUpdaterArtifacts: true,
+    ...(process.env.APPLE_SIGNING_IDENTITY
+      ? {
+          macOS: {
+            signingIdentity: process.env.APPLE_SIGNING_IDENTITY,
+            hardenedRuntime: true,
+          },
+        }
+      : {}),
+  },
   plugins: {
     updater: {
       pubkey: publicKey,

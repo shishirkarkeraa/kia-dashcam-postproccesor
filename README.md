@@ -183,10 +183,17 @@ Release preparation downloads only the immutable build inputs pinned in
 1. verifies each archive SHA-256;
 2. confirms the staging runner matches the requested target;
 3. verifies native macOS architectures with `lipo`;
-4. executes FFmpeg and FFprobe license reports;
-5. rejects `--enable-nonfree` and builds marked non-redistributable;
-6. requires the GPL and libx264 features used by the unchanged pipeline; and
-7. confirms the pinned HandBrake version.
+4. thins universal macOS tools to the release target architecture;
+5. signs every macOS media executable with hardened runtime and verifies it;
+6. executes FFmpeg and FFprobe license reports;
+7. rejects `--enable-nonfree` and builds marked non-redistributable;
+8. requires the GPL and libx264 features used by the unchanged pipeline; and
+9. confirms the pinned HandBrake version.
+
+Local macOS staging uses a complete ad-hoc signature so local app bundles have a
+valid resource seal. Tagged releases import a Developer ID Application identity
+before staging, replace the nested executable signatures with that identity, and
+record hashes only after thinning and signing are complete.
 
 Licenses and corresponding source locations are documented in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The media programs remain
@@ -334,7 +341,26 @@ installation/restart, and defers updates while processing. The CLI prompts only 
 interactive use; noninteractive use prints a notice. Missing/invalid signatures are
 rejected, and update network failures never block local video processing.
 
+The macOS release gate rejects an artifact unless the main executable and all three
+media tools are architecture-specific, signed by the same Developer ID team, covered
+by a strict deep bundle signature, notarized, stapled, accepted by Gatekeeper, and
+identical to their post-signing manifest hashes.
+
 ## Troubleshooting
+
+### The macOS app opens slowly
+
+Do not distribute an app copied from an unsigned build directory. Use the tagged
+release DMG, drag the app into `/Applications`, and verify it with:
+
+```bash
+bash scripts/verify-macos-app.sh \
+  "/Applications/Kia Dashcam Processor.app" \
+  aarch64-apple-darwin
+```
+
+Use `x86_64-apple-darwin` on an Intel Mac. The verification must report a signed,
+notarized application; an ad-hoc identity is intended only for local builds.
 
 ### “Required media tool not found”
 

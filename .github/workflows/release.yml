@@ -77,9 +77,6 @@ jobs:
         shell: bash
         run: node scripts/set-version.mjs "${GITHUB_REF_NAME}"
 
-      - name: Prepare repository-derived signed updater configuration
-        run: node scripts/prepare-tauri-release-config.mjs
-
       - name: Install Linux desktop and HandBrake build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -104,9 +101,6 @@ jobs:
           bash scripts/build-linux-handbrake.sh "$RUNNER_TEMP/handbrake/HandBrakeCLI"
           echo "KIA_HANDBRAKE_PATH=$RUNNER_TEMP/handbrake/HandBrakeCLI" >> "$GITHUB_ENV"
 
-      - name: Stage checksum-verified media tools
-        run: npm run prepare:media --prefix apps/dashcam-gui
-
       - name: Import Apple Developer ID certificate
         if: runner.os == 'macOS'
         shell: bash
@@ -117,9 +111,17 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          identity="$(security find-identity -v -p codesigning build.keychain | awk -F\" 'NR == 1 { print $2 }')"
+          identity="$(security find-identity -v -p codesigning build.keychain | awk -F\" '/Developer ID Application:/ { print $2; exit }')"
           test -n "$identity"
           echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Prepare repository-derived signed updater configuration
+        run: node scripts/prepare-tauri-release-config.mjs
+
+      - name: Stage checksum-verified media tools
+        env:
+          KIA_REQUIRE_DEVELOPER_ID: ${{ runner.os == 'macOS' && 'true' || 'false' }}
+        run: npm run prepare:media --prefix apps/dashcam-gui
 
       - name: Decode Windows signing certificate
         if: runner.os == 'Windows'
@@ -182,6 +184,14 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.tauri_args }}
+
+      - name: Verify macOS signing, notarization, architecture, and checksums
+        if: runner.os == 'macOS'
+        shell: bash
+        run: >-
+          bash scripts/verify-macos-app.sh
+          "target/${{ matrix.target }}/release/bundle/macos/Kia Dashcam Processor.app"
+          "${{ matrix.target }}"
 
       - name: Upload standalone CLI archive
         uses: softprops/action-gh-release@v2

@@ -35,6 +35,10 @@
     "resources": {
       "binaries/media-tools/": "media-tools/"
     },
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": true
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser"
