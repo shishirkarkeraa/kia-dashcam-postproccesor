@@ -1,4 +1,4 @@
-name: Signed cross-platform release
+name: Signed Windows and Linux release
 
 on:
   push:
@@ -16,22 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS Apple Silicon
-            os: macos-15
-            target: aarch64-apple-darwin
-            bundles: dmg
-            archive_kind: tar
-            archive_extension: tar.gz
-            executable_suffix: ""
-            tauri_args: --target aarch64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
-          - name: macOS Intel
-            os: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: dmg
-            archive_kind: tar
-            archive_extension: tar.gz
-            executable_suffix: ""
-            tauri_args: --target x86_64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
           - name: Windows x64
             os: windows-2025
             target: x86_64-pc-windows-msvc
@@ -56,12 +40,6 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
@@ -101,26 +79,10 @@ jobs:
           bash scripts/build-linux-handbrake.sh "$RUNNER_TEMP/handbrake/HandBrakeCLI"
           echo "KIA_HANDBRAKE_PATH=$RUNNER_TEMP/handbrake/HandBrakeCLI" >> "$GITHUB_ENV"
 
-      - name: Import Apple Developer ID certificate
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/certificate.p12', Buffer.from(process.env.APPLE_CERTIFICATE, 'base64'))"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          identity="$(security find-identity -v -p codesigning build.keychain | awk -F\" '/Developer ID Application:/ { print $2; exit }')"
-          test -n "$identity"
-          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
-
       - name: Prepare repository-derived signed updater configuration
         run: node scripts/prepare-tauri-release-config.mjs
 
       - name: Stage checksum-verified media tools
-        env:
-          KIA_REQUIRE_DEVELOPER_ID: ${{ runner.os == 'macOS' && 'true' || 'false' }}
         run: npm run prepare:media --prefix apps/dashcam-gui
 
       - name: Decode Windows signing certificate
@@ -133,11 +95,6 @@ jobs:
 
       - name: Build standalone CLI
         run: cargo build --locked --release --target ${{ matrix.target }} -p kia-dashcam-cli
-
-      - name: Code-sign macOS CLI
-        if: runner.os == 'macOS'
-        shell: bash
-        run: codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "target/${{ matrix.target }}/release/kia-dashcam-cli"
 
       - name: Code-sign Windows CLI
         if: runner.os == 'Windows'
@@ -180,18 +137,10 @@ jobs:
           projectPath: apps/dashcam-gui
           tagName: ${{ github.ref_name }}
           releaseName: Kia Dashcam Processor ${{ github.ref_name }}
-          releaseBody: Self-contained signed desktop installers and CLI archives for Windows, macOS, and Linux.
+          releaseBody: Self-contained signed desktop installers and CLI archives for Windows and Linux.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.tauri_args }}
-
-      - name: Verify macOS signing, notarization, architecture, and checksums
-        if: runner.os == 'macOS'
-        shell: bash
-        run: >-
-          bash scripts/verify-macos-app.sh
-          "target/${{ matrix.target }}/release/bundle/macos/Kia Dashcam Processor.app"
-          "${{ matrix.target }}"
 
       - name: Upload standalone CLI archive
         uses: softprops/action-gh-release@v2
